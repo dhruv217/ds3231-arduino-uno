@@ -85,29 +85,6 @@ void setup()
     digitalWrite(OnTimeLED, HIGH);
 }
 
-/* void loop()
-{
-    static unsigned long previousTime = 0;
-    DateTime now = rtc.now();
-    unsigned long timeNow = now.unixtime();
-
-    if (timeNow != previousTime)
-    {
-        lc.setChar(0, 2, time[1], true); // flash the led
-        delay(500);                      // wait a little bit
-        lc.setChar(0, 2, time[1], false); // turn off led
-        previousTime = timeNow;          // remember previous time
-    }
-    getTime();
-
-    printTimeToLED();
-    if(digitalRead(buttonExit) == LOW){
-        digitalWrite(OnTimeLED, HIGH);
-    } else {
-        digitalWrite(OnTimeLED, LOW);
-    }
-} */
-
 void loop() {
     if (buttonNext == LOW && Mode != ALWAYS){
         Mode += Mode;
