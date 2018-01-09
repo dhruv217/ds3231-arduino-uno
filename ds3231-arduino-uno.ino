@@ -2,6 +2,7 @@
 #include <Wire.h>
 #include "RTClib.h"
 #include "LedControl.h" //  need the library
+#include <EEPROMAnything.h>
 
 #define ALWAYS 0
 #define SET_TIME_HH 1
@@ -10,7 +11,7 @@
 #define SET_ON_TIME_MM 4
 #define SET_OFF_TIME_HH 5
 #define SET_OFF_TIME_MM 6
-#define STORE_ARGS 7
+#define SET_OVERFLOW 7
 
 int Mode = ALWAYS;
 
@@ -28,9 +29,18 @@ const byte secondPulsePin = 14;
 RTC_DS3231 rtc;
 LedControl lc = LedControl(10, 9, 11, 1); // LedControl(dataPin,clockPin,csPin,numDevices)
 
+struct RelayTime_t
+{
+    int onTime = 0;
+    int offTime = 0;
+} RelayTime;
+
+int RelayTimeAddr = 0;
 
 char time[4];
-
+char previousTime[4];
+char OnTime[4];
+char OffTime[4];
 volatile byte flag = false;
 
 void rtc_interrupt()
@@ -82,22 +92,41 @@ void setup()
         // January 21, 2014 at 3am you would call:
         // rtc.adjust(DateTime(2014, 1, 21, 3, 0, 0));
     }
-    digitalWrite(OnTimeLED, HIGH);
+
+    // Read Values From eeprom
+    EEPROM_readAnything(RelayTimeAddr, RelayTime);
+    Serial.println(RelayTime.onTime);
+    Serial.println(RelayTime.offTime);
+
+    itoa(RelayTime.onTime, OnTime, 10);
+    itoa(RelayTime.offTime, OffTime, 10);
+
 }
 
 void loop() {
-    if (buttonNext == LOW && Mode != ALWAYS){
-        Mode += Mode;
+    if (digitalRead(buttonNext) == LOW && Mode != ALWAYS){
+        Mode = Mode + 1;
+        delay(100);
     }
-    /* if (longpresscondition && Mode == ALWAYS)
-    {
-        Mode = SET_TIME_HH
-    } */
+    if (digitalRead(buttonNext) == LOW && digitalRead(buttonExit) == LOW && Mode == ALWAYS){
+        Mode = SET_TIME_HH;
+        delay(1000);
+    }
+    if (digitalRead(buttonExit) == LOW && Mode != ALWAYS){
+        StoreArgs();
+        delay(500);
+        clearDisplay(1);
+        Mode = ALWAYS;
+        delay(50);
+    }
     switch (Mode)
     {
     case ALWAYS:
+        digitalWrite(OnTimeLED, LOW);
+        digitalWrite(OffTimeLED, LOW);
         DisplayTime();
         ToggleOnOff();
+        clearDisplay(1);
         break;
     case SET_TIME_HH:
         DisplaySetTimeHH();
@@ -117,10 +146,9 @@ void loop() {
     case SET_OFF_TIME_MM:
         DisplaySetOFFTimeMM();
         break;
-    case STORE_ARGS:
-        StoreArgs();
-        delay(500);
-        Mode = ALWAYS;
+    case SET_OVERFLOW:
+        clearDisplay(1);
+        Mode = SET_TIME_HH;
         break;
     }
     delay(100);
@@ -132,17 +160,19 @@ void getTime(void)
     DateTime now = rtc.now();
 
     sprintf(time, "%02hhu%02hhu", now.hour(), now.minute());
+    strcpy( previousTime, time);
     delay(400);
 }
 
-void printTimeToLED(void)
+void printTimeToLED(int display, char HHMM[])
 {
+    display = display * 4;
     //minutes
-    lc.setChar(0, 0, time[3], false);
-    lc.setChar(0, 1, time[2], false);
+    lc.setChar(0, display, HHMM[3], false);
+    lc.setChar(0, display+1, HHMM[2], false);
     //hours
-    lc.setChar(0, 2, time[1], false);
-    lc.setChar(0, 3, time[0], false);
+    lc.setChar(0, display+2, HHMM[1], false);
+    lc.setChar(0, display+3, HHMM[0], false);
 }
 
 void DisplayTime(void){
@@ -158,7 +188,7 @@ void DisplayTime(void){
         previousTime = timeNow;           // remember previous time
     }
     getTime();
-    printTimeToLED();
+    printTimeToLED(0, time);
 }
 
 void ToggleOnOff(void)
@@ -167,28 +197,276 @@ void ToggleOnOff(void)
 
 void DisplaySetTimeHH(void)
 {
+    digitalWrite(OnTimeLED, LOW);
+    digitalWrite(OffTimeLED, LOW);
+    if (digitalRead(buttonUp) == LOW) {    // Increment
+        if (time[0] == '2' && time[1] == '3') {
+            time[0] = '0';
+            time[1] = '0';
+        }
+        else if (time[1] == '9') {
+            time[0] = (int)time[0] + 1;
+            time[1] = '0';
+        }
+        else {
+            time[1] = (int)time[1] + 1;
+        }
+        delay(50);
+    }
+    if (digitalRead(buttonDown) == LOW) {  // Decrement
+        if (time[0] == '0' && time[1] == '0')
+        {
+            time[0] = '2';
+            time[1] = '3';
+        }
+        else if (time[1] == '0')
+        {
+            time[0] = (int)time[0] - 1;
+            time[1] = '9';
+        }
+        else
+        {
+            time[1] = (int)time[1] - 1;
+        }
+        delay(50);
+    }
+    printTimeToLED(0, time);
 }
 
 void DisplaySetTimeMM(void)
 {
+    digitalWrite(OnTimeLED, LOW);
+    digitalWrite(OffTimeLED, LOW);
+    if (digitalRead(buttonUp) == LOW)
+    { // Increment
+        if (time[2] == '5' && time[3] == '9')
+        {
+            time[2] = '0';
+            time[3] = '0';
+        }
+        else if (time[3] == '9')
+        {
+            time[2] = (int)time[2] + 1;
+            time[3] = '0';
+        }
+        else
+        {
+            time[3] = (int)time[3] + 1;
+        }
+        delay(50);
+    }
+    if (digitalRead(buttonDown) == LOW)
+    { // Decrement
+        if (time[2] == '0' && time[3] == '0')
+        {
+            time[2] = '5';
+            time[3] = '9';
+        }
+        else if (time[3] == '0')
+        {
+            time[2] = (int)time[2] - 1;
+            time[3] = '9';
+        }
+        else
+        {
+            time[3] = (int)time[3] - 1;
+        }
+        delay(50);
+    }
+    printTimeToLED(0, time);
 }
 
 void DisplaySetONTimeHH(void)
 {
+    digitalWrite(OnTimeLED, HIGH);
+    digitalWrite(OffTimeLED, LOW);
+    if (digitalRead(buttonUp) == LOW)
+    { // Increment
+        if (OnTime[0] == '2' && OnTime[1] == '3')
+        {
+            OnTime[0] = '0';
+            OnTime[1] = '0';
+        }
+        else if (OnTime[1] == '9')
+        {
+            OnTime[0] = (int)OnTime[0] + 1;
+            OnTime[1] = '0';
+        }
+        else
+        {
+            OnTime[1] = (int)OnTime[1] + 1;
+        }
+        delay(50);
+    }
+    if (digitalRead(buttonDown) == LOW)
+    { // Decrement
+        if (OnTime[0] == '0' && OnTime[1] == '0')
+        {
+            OnTime[0] = '2';
+            OnTime[1] = '3';
+        }
+        else if (OnTime[1] == '0')
+        {
+            OnTime[0] = (int)OnTime[0] - 1;
+            OnTime[1] = '9';
+        }
+        else
+        {
+            OnTime[1] = (int)OnTime[1] - 1;
+        }
+        delay(50);
+    }
+    printTimeToLED(1, OnTime);
 }
 
 void DisplaySetONTimeMM(void)
 {
+    digitalWrite(OnTimeLED, HIGH);
+    digitalWrite(OffTimeLED, LOW);
+    if (digitalRead(buttonUp) == LOW)
+    { // Increment
+        if (OnTime[2] == '5' && OnTime[3] == '9')
+        {
+            OnTime[2] = '0';
+            OnTime[3] = '0';
+        }
+        else if (OnTime[3] == '9')
+        {
+            OnTime[2] = (int)OnTime[2] + 1;
+            OnTime[3] = '0';
+        }
+        else
+        {
+            OnTime[3] = (int)OnTime[3] + 1;
+        }
+        delay(50);
+    }
+    if (digitalRead(buttonDown) == LOW)
+    { // Decrement
+        if (OnTime[2] == '0' && OnTime[3] == '0')
+        {
+            OnTime[2] = '5';
+            OnTime[3] = '9';
+        }
+        else if (OnTime[3] == '0')
+        {
+            OnTime[2] = (int)OnTime[2] - 1;
+            OnTime[3] = '9';
+        }
+        else
+        {
+            OnTime[3] = (int)OnTime[3] - 1;
+        }
+        delay(50);
+    }
+    printTimeToLED(1, OnTime);
 }
 
 void DisplaySetOFFTimeHH(void)
 {
+    digitalWrite(OnTimeLED, LOW);
+    digitalWrite(OffTimeLED, HIGH);
+    if (digitalRead(buttonUp) == LOW)
+    { // Increment
+        if (OffTime[0] == '2' && OffTime[1] == '3')
+        {
+            OffTime[0] = '0';
+            OffTime[1] = '0';
+        }
+        else if (OffTime[1] == '9')
+        {
+            OffTime[0] = (int)OffTime[0] + 1;
+            OffTime[1] = '0';
+        }
+        else
+        {
+            OffTime[1] = (int)OffTime[1] + 1;
+        }
+        delay(50);
+    }
+    if (digitalRead(buttonDown) == LOW)
+    { // Decrement
+        if (OffTime[0] == '0' && OffTime[1] == '0')
+        {
+            OffTime[0] = '2';
+            OffTime[1] = '3';
+        }
+        else if (OffTime[1] == '0')
+        {
+            OffTime[0] = (int)OffTime[0] - 1;
+            OffTime[1] = '9';
+        }
+        else
+        {
+            OffTime[1] = (int)OffTime[1] - 1;
+        }
+        delay(50);
+    }
+    printTimeToLED(1, OffTime);
 }
 
 void DisplaySetOFFTimeMM(void)
 {
+    digitalWrite(OnTimeLED, LOW);
+    digitalWrite(OffTimeLED, HIGH);
+    if (digitalRead(buttonUp) == LOW)
+    { // Increment
+        if (OffTime[2] == '5' && OffTime[3] == '9')
+        {
+            OffTime[2] = '0';
+            OffTime[3] = '0';
+        }
+        else if (OffTime[3] == '9')
+        {
+            OffTime[2] = (int)OffTime[2] + 1;
+            OffTime[3] = '0';
+        }
+        else
+        {
+            OffTime[3] = (int)OffTime[3] + 1;
+        }
+        delay(50);
+    }
+    if (digitalRead(buttonDown) == LOW)
+    { // Decrement
+        if (OffTime[2] == '0' && OffTime[3] == '0')
+        {
+            OffTime[2] = '5';
+            OffTime[3] = '9';
+        }
+        else if (OffTime[3] == '0')
+        {
+            OffTime[2] = (int)OffTime[2] - 1;
+            OffTime[3] = '9';
+        }
+        else
+        {
+            OffTime[3] = (int)OffTime[3] - 1;
+        }
+        delay(50);
+    }
+    printTimeToLED(1, OffTime);
 }
 
 void StoreArgs(void)
 {
+    if (memcmp_P(previousTime, time, 4) != 0)
+    {
+        int hoursupg = ((time[0] - '0') * 10) + (time[1] - '0');
+        int minutesupg = ((time[2] - '0') * 10) + (time[3] - '0');
+        DateTime datatime = rtc.now();
+        rtc.adjust(DateTime(datatime.year(), datatime.month(), datatime.day(), hoursupg, minutesupg, 0));
+    }
+    RelayTime_t newRelayTime;
+    newRelayTime.onTime = atoi(OnTime);
+    newRelayTime.offTime = atoi(OffTime);
+    EEPROM_writeAnything(RelayTimeAddr, newRelayTime);
+}
+
+void clearDisplay(int addr) {
+    addr = addr * 4;
+    lc.setChar(0, addr, " ", false);
+    lc.setChar(0, addr + 1, " ", false);
+    lc.setChar(0, addr + 2, " ", false);
+    lc.setChar(0, addr + 3, " ", false);
 }
