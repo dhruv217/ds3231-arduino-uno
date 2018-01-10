@@ -29,13 +29,11 @@ const byte secondPulsePin = 14;
 RTC_DS3231 rtc;
 LedControl lc = LedControl(10, 9, 11, 1); // LedControl(dataPin,clockPin,csPin,numDevices)
 
-struct RelayTime_t
-{
-    int onTime = 0;
-    int offTime = 0;
-} RelayTime;
-
 int RelayTimeAddr = 0;
+struct RelayTimes_t {
+    char Ontime[4];
+    char Offtime[4];
+} RelayTimes;
 
 char time[4];
 char previousTime[4];
@@ -92,15 +90,12 @@ void setup()
         // January 21, 2014 at 3am you would call:
         // rtc.adjust(DateTime(2014, 1, 21, 3, 0, 0));
     }
+    
 
     // Read Values From eeprom
-    EEPROM_readAnything(RelayTimeAddr, RelayTime);
-    Serial.println(RelayTime.onTime);
-    Serial.println(RelayTime.offTime);
-
-    itoa(RelayTime.onTime, OnTime, 10);
-    itoa(RelayTime.offTime, OffTime, 10);
-
+    EEPROM.get(RelayTimeAddr, RelayTimes);
+    strcpy(OnTime, RelayTimes.Ontime);
+    strcpy(OffTime, RelayTimes.Offtime);
 }
 
 void loop() {
@@ -193,6 +188,26 @@ void DisplayTime(void){
 
 void ToggleOnOff(void)
 {
+    if (compairTime(time, OnTime) && digitalRead(relayOut) == LOW){
+        digitalWrite(relayOut, HIGH);
+        digitalWrite(blueOut, HIGH);
+    }
+    if (compairTime(time, OffTime) && digitalRead(relayOut) == HIGH)
+    {
+        digitalWrite(relayOut, LOW);
+        digitalWrite(blueOut, LOW);
+    }
+}
+
+bool compairTime(char time1[], char time2[]) {
+    if (time1[0] == time2[0] && 
+        time1[1] == time2[1] && 
+        time1[2] == time2[2] && 
+        time1[3] == time2[3])
+    {
+        return true;
+    }
+    return false;
 }
 
 void DisplaySetTimeHH(void)
@@ -450,17 +465,22 @@ void DisplaySetOFFTimeMM(void)
 
 void StoreArgs(void)
 {
-    if (memcmp_P(previousTime, time, 4) != 0)
+    Serial.println(previousTime);
+    Serial.println(time);
+
+    if (strcmp(previousTime, time) != 0)
     {
         int hoursupg = ((time[0] - '0') * 10) + (time[1] - '0');
         int minutesupg = ((time[2] - '0') * 10) + (time[3] - '0');
         DateTime datatime = rtc.now();
         rtc.adjust(DateTime(datatime.year(), datatime.month(), datatime.day(), hoursupg, minutesupg, 0));
+        Serial.println("Time Changed");
     }
-    RelayTime_t newRelayTime;
-    newRelayTime.onTime = atoi(OnTime);
-    newRelayTime.offTime = atoi(OffTime);
-    EEPROM_writeAnything(RelayTimeAddr, newRelayTime);
+    RelayTimes_t relayTmp;
+    strcpy(relayTmp.Ontime, OnTime);
+    strcpy(relayTmp.Offtime, OffTime);
+    EEPROM.put(RelayTimeAddr, relayTmp);
+    delay(500);
 }
 
 void clearDisplay(int addr) {
